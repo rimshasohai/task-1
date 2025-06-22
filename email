@@ -1,0 +1,64 @@
+import time
+import os
+import smtplib
+import google.generativeai as genai
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
+from google.oauth2.service_account import Credentials
+from googleapiclient.discovery import build
+
+GEMINI_API_KEY="GEMINI KEY"
+SHEET_ID="SHEET ID"
+EMAIL_ADDRESS="your email@gmail.com"
+EMAIL_PASSWORD="your APP PASSWORD"
+
+genai.configure(api_key=GEMINI_API_KEY)
+model=genai.GenerativeModel("gemini-pro")
+
+SCOPES=['https://www.googleapis.com/auth/spreadsheets.readonly']
+creds= Credentials.from_service_account_file('auto-reply-bot-43f36e56cd3a.json',scopes=SCOPES)
+service=build('sheets','v4',credentials=creds)
+RANGE_NAME='FORM RESPONSE 1!A2:C'
+
+def send_email(to_email,subject,body):
+    msg=MIMEMultipart()
+    msg['From']=EMAIL_ADDRESS
+    msg['To']=to_email
+    msg['Subject']=subject
+    msg.attach(MIMEText(body,'plain'))
+
+    with smtplib.SMTP('smtp.gmail.com',587) as server:
+      server.starttls()
+      server.login(EMAIL_ADDRESS,EMAIL_PASSWORD)
+      server.send_message(msg)
+
+def get_form_responses():
+    sheet=service.spreadsheets()
+    result= sheet.values().get(spreadsheetId=SHEET_ID,range=RANGE_NAME).execute()
+    values=result.get('values',[])
+    return values
+
+processed_rows=set()
+
+while True:
+   responses= get_form_responses()
+   for i,row in enumerate(responses):
+       if i in processed_rows:
+          continue
+       if len(row)<3:
+          continue
+
+       name,email,message=row[0],row[1],row[2]
+       prompt=" "
+       gemini_response=model.generate_content(prompt)
+       reply_text=gemini_response.text.strip()
+
+       send_email(
+           to_email=email,
+           subject="THANKS FOR CONTACTING US",
+           body=reply_text
+       )   
+       print(f"SENT REPLY TO{email}")
+       processed_rows.add(i)
+
+       time.sleep(60)
